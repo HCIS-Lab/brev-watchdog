@@ -1,0 +1,49 @@
+# Alarm template: raise when an instance has been idle for 5+ minutes
+# with NO spikes in any monitored hardware stat during that time.
+#
+#   uv run watchdog.py -c config.template.toml
+#
+# How "no spikes" is enforced:
+#   * every poll samples once per second for `probe_seconds` and reports the PEAK
+#     (cpu, gpu util, gpu mem) over that window, not an instantaneous value;
+#   * a poll is "idle" only if every peak is under its threshold;
+#   * any non-idle poll resets the idle timer, so the alarm needs idle_minutes of
+#     consecutive quiet polls. Spikes shorter than the gap between probe windows
+#     can still slip through: keep interval_seconds small relative to idle_minutes.
+
+orgs = ["org-3CIFUz1HNiANonYBrONM2TytCdH"]   # names or org-IDs; empty = active org
+ssh_key = "~/.ssh/id_ed25519"   # key authorized on the instances (fallback: brev exec)
+
+interval_seconds = 60           # 5 polls inside the 5 min window
+probe_seconds = 15              # peak-sampling window per poll (25% coverage at 60s)
+exec_timeout_seconds = 60
+max_parallel = 4
+ignore = []                     # instance names that must never alarm
+
+[idle]
+idle_minutes = 5                # quiet this long -> alarm
+realert_minutes = 30            # repeat reminder while still idle
+
+# Thresholds apply to the PEAK in each probe window (metric < value = quiet).
+# All enabled checks must pass. Comment out a line to disable it.
+# Peak of 1s CPU samples on an UNLOADED 1-vCPU instance measured 5-11% (probe + brev
+# agents), so 15 is the floor for small machines; lower it on larger ones.
+cpu_percent_below = 15.0        # peak CPU
+gpu_util_percent_below = 5.0    # peak GPU util (any GPU); skipped on CPU-only instances
+gpu_mem_percent_below = 5.0     # peak GPU memory used; skipped on CPU-only instances
+# ram_percent_below = 30.0      # RAM is steady-state, so enable only if your idle baseline is low
+# Disk is shown but never used for idle decisions.
+# GPU instances whose GPU stats fail (driver down) are never judged idle.
+
+# Alert channels (adapter pattern): add as many as you like.
+[alerts.log]
+type = "log"
+
+# [alerts.slack]
+# type = "webhook"
+# url = "https://hooks.slack.com/services/XXX"
+# payload_key = "text"
+
+# [alerts.notify]
+# type = "command"
+# command = "notify-send \"$WATCHDOG_MESSAGE\""
